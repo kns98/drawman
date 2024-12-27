@@ -1,6 +1,5 @@
 ﻿using System;
 using SkiaSharp;
-using SkiaSharp.Views.Desktop;
 
 public class HumanBodyDrawing
 {
@@ -11,37 +10,42 @@ public class HumanBodyDrawing
     private float legLength = 120;
     private float eyeSize = 10;
 
-    public void Run()
+    public void Run(string outputFilePath = "human_body.png")
     {
-        using (var window = new SKGLControl())
+        // Set canvas dimensions
+        int canvasWidth = 800;
+        int canvasHeight = 600;
+
+        // Create an image surface
+        using (var surface = SKSurface.Create(new SKImageInfo(canvasWidth, canvasHeight)))
         {
-            window.Size = new System.Drawing.Size(800, 600);
-            window.PaintSurface += OnPaintSurface;
-            var app = new System.Windows.Forms.ApplicationContext();
-            var form = new System.Windows.Forms.Form
+            var canvas = surface.Canvas;
+
+            // Clear the canvas
+            canvas.Clear(SKColors.White);
+
+            // Draw the human figure
+            float centerX = canvasWidth / 2;
+            float topY = 50;
+
+            DrawHead(canvas, centerX, topY);
+            DrawEyes(canvas, centerX, topY);
+            DrawBody(canvas, centerX, topY);
+            DrawArms(canvas, centerX, topY);
+            DrawLegs(canvas, centerX, topY);
+
+            // Save the output to a file
+            using (var image = surface.Snapshot())
+            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
             {
-                Text = "Human Body Drawing",
-                ClientSize = window.Size
-            };
-            form.Controls.Add(window);
-            app.MainForm = form;
-            System.Windows.Forms.Application.Run(app);
+                using (var stream = System.IO.File.OpenWrite(outputFilePath))
+                {
+                    data.SaveTo(stream);
+                }
+            }
         }
-    }
 
-    private void OnPaintSurface(object sender, SKPaintGLSurfaceEventArgs e)
-    {
-        var canvas = e.Surface.Canvas;
-        canvas.Clear(SKColors.White);
-
-        float centerX = e.BackendRenderTarget.Width / 2;
-        float topY = 50;
-
-        DrawHead(canvas, centerX, topY);
-        DrawEyes(canvas, centerX, topY);
-        DrawBody(canvas, centerX, topY);
-        DrawArms(canvas, centerX, topY);
-        DrawLegs(canvas, centerX, topY);
+        Console.WriteLine($"Human body drawing saved to {outputFilePath}");
     }
 
     private void DrawHead(SKCanvas canvas, float centerX, float topY)
@@ -114,6 +118,7 @@ public class HumanBodyDrawing
 
     public static void Main(string[] args)
     {
-        new HumanBodyDrawing().Run();
+        var drawing = new HumanBodyDrawing();
+        drawing.Run();
     }
 }
