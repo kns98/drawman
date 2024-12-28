@@ -1,124 +1,174 @@
-﻿using System;
-using SkiaSharp;
+using System;
+using System.Drawing;
+using System.IO;
+using ImageMagick;
 
-public class HumanBodyDrawing
+/// <summary>
+/// Represents a 3D vector with double precision components.
+/// </summary>
+public struct Vector3f
 {
-    private float headSize = 50;
-    private float bodyHeight = 200;
-    private float bodyWidth = 80;
-    private float armLength = 100;
-    private float legLength = 120;
-    private float eyeSize = 10;
+    public double X { get; }
+    public double Y { get; }
+    public double Z { get; }
 
-    public void Run(string outputFilePath = "human_body.png")
+    public Vector3f(double x, double y, double z)
     {
-        // Set canvas dimensions
-        int canvasWidth = 800;
-        int canvasHeight = 600;
+        X = x;
+        Y = y;
+        Z = z;
+    }
 
-        // Create an image surface
-        using (var surface = SKSurface.Create(new SKImageInfo(canvasWidth, canvasHeight)))
+    public double this[int index]
+    {
+        get
         {
-            var canvas = surface.Canvas;
-
-            // Clear the canvas
-            canvas.Clear(SKColors.White);
-
-            // Draw the human figure
-            float centerX = canvasWidth / 2;
-            float topY = 50;
-
-            DrawHead(canvas, centerX, topY);
-            DrawEyes(canvas, centerX, topY);
-            DrawBody(canvas, centerX, topY);
-            DrawArms(canvas, centerX, topY);
-            DrawLegs(canvas, centerX, topY);
-
-            // Save the output to a file
-            using (var image = surface.Snapshot())
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
+            double v = index switch
             {
-                using (var stream = System.IO.File.OpenWrite(outputFilePath))
-                {
-                    data.SaveTo(stream);
-                }
+                0 => X,
+                1 => Y,
+                2 => Z,
+                _ => throw new IndexOutOfRangeException(),
+            };
+            return v;
+        }
+    }
+
+    public static Vector3f Zero => new Vector3f(0, 0, 0);
+    public static Vector3f OneX => new Vector3f(1, 0, 0);
+    public static Vector3f OneY => new Vector3f(0, 1, 0);
+    public static Vector3f OneZ => new Vector3f(0, 0, 1);
+
+    public static Vector3f operator -(Vector3f a) => new Vector3f(-a.X, -a.Y, -a.Z);
+    public static Vector3f operator -(Vector3f a, Vector3f b) => new Vector3f(a.X - b.X, a.Y - b.Y, a.Z - b.Z);
+    public static Vector3f operator +(Vector3f a, Vector3f b) => new Vector3f(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
+    public static Vector3f operator *(Vector3f a, double scalar) => new Vector3f(a.X * scalar, a.Y * scalar, a.Z * scalar);
+    public static Vector3f operator /(Vector3f a, double scalar) => new Vector3f(a.X / scalar, a.Y / scalar, a.Z / scalar);
+
+    public static double Dot(Vector3f a, Vector3f b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
+
+    public static Vector3f Cross(Vector3f a, Vector3f b) => new Vector3f(
+        a.Y * b.Z - a.Z * b.Y,
+        a.Z * b.X - a.X * b.Z,
+        a.X * b.Y - a.Y * b.X);
+
+    public static Vector3f Unitize(Vector3f vector)
+    {
+        double length = Math.Sqrt(vector.X * vector.X + vector.Y * vector.Y + vector.Z * vector.Z);
+        return vector / length;
+    }
+
+    public double Length() => Math.Sqrt(X * X + Y * Y + Z * Z);
+
+    public static Vector3f Reflect(Vector3f incident, Vector3f normal)
+    {
+        return incident - normal * 2 * Dot(incident, normal);
+    }
+
+    internal bool IsZero()
+    {
+        return X == 0 && Y == 0 && Z == 0;
+    }
+}
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        int frameCount = 60;
+        int width = 800;
+        int height = 600;
+        string outputFolder = "frames";
+        string outputFilePath = "animated_human_video.mp4";
+
+        if (!Directory.Exists(outputFolder))
+        {
+            Directory.CreateDirectory(outputFolder);
+        }
+
+        for (int frame = 0; frame < frameCount; frame++)
+        {
+            using (var frameImage = GenerateFrame(frame, width, height))
+            {
+                string frameFilePath = Path.Combine(outputFolder, $"frame_{frame:D3}.png");
+                frameImage.Save(frameFilePath, System.Drawing.Imaging.ImageFormat.Png);
             }
         }
 
-        Console.WriteLine($"Human body drawing saved to {outputFilePath}");
+        Console.WriteLine("Frames saved. Creating video...");
+
+        using (var collection = new MagickImageCollection())
+        {
+            for (int frame = 0; frame < frameCount; frame++)
+            {
+                string frameFilePath = Path.Combine(outputFolder, $"frame_{frame:D3}.png");
+                var magickImage = new MagickImage(frameFilePath);
+                magickImage.AnimationDelay = 10;
+                collection.Add(magickImage);
+            }
+
+            collection.Write(outputFilePath);
+        }
+
+        Console.WriteLine($"Video saved to {outputFilePath}");
     }
 
-    private void DrawHead(SKCanvas canvas, float centerX, float topY)
+    static Bitmap GenerateFrame(int frame, int width, int height)
     {
-        float headX = centerX - headSize / 2;
-        float headY = topY;
-        canvas.DrawOval(headX + headSize / 2, headY + headSize / 2, headSize / 2, headSize / 2, new SKPaint { Color = SKColors.LightBlue });
+        Bitmap bitmap = new Bitmap(width, height);
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            g.Clear(Color.White);
+
+            double headTilt = Math.Sin(frame * 0.1) * 15;
+            double armAngle = Math.Sin(frame * 1);
+
+            int centerX = width / 2;
+            int centerY = height / 2;
+
+            DrawNeck(g, new Vector3f(centerX, centerY - 100, 0));
+            DrawHead(g, new Vector3f(centerX, centerY - 150, 0), headTilt);
+            DrawBody(g, new Vector3f(centerX, centerY, 0));
+            DrawArm(g, new Vector3f(centerX - 50, centerY - 50, 0), Vector3f.OneX * armAngle);
+            DrawArm(g, new Vector3f(centerX + 50, centerY - 50, 0), Vector3f.OneX * -armAngle);
+            DrawLeg(g, new Vector3f(centerX - 20, centerY + 100, 0), Vector3f.OneY * armAngle);
+            DrawLeg(g, new Vector3f(centerX + 20, centerY + 100, 0), Vector3f.OneY * -armAngle);
+        }
+        return bitmap;
     }
 
-    private void DrawEyes(SKCanvas canvas, float centerX, float topY)
+    static void DrawNeck(Graphics g, Vector3f position)
     {
-        float headX = centerX - headSize / 2;
-        float headY = topY;
-
-        float leftEyeX = headX + headSize / 4;
-        float leftEyeY = headY + headSize / 3;
-        float rightEyeX = headX + 3 * headSize / 4;
-        float rightEyeY = leftEyeY;
-
-        var eyePaint = new SKPaint { Color = SKColors.White };
-        canvas.DrawCircle(leftEyeX, leftEyeY, eyeSize, eyePaint);
-        canvas.DrawCircle(rightEyeX, rightEyeY, eyeSize, eyePaint);
+        g.FillRectangle(Brushes.LightBlue, (float)position.X - 10, (float)position.Y - 20, 20, 20);
     }
 
-    private void DrawBody(SKCanvas canvas, float centerX, float topY)
+    static void DrawHead(Graphics g, Vector3f position, double tilt)
     {
-        float bodyX = centerX - bodyWidth / 2;
-        float bodyY = topY + headSize;
-        var bodyPaint = new SKPaint { Color = SKColors.LightGreen };
-        canvas.DrawRect(bodyX, bodyY, bodyWidth, bodyHeight, bodyPaint);
+        g.TranslateTransform((float)position.X, (float)position.Y);
+        g.RotateTransform((float)tilt);
+        g.FillEllipse(Brushes.LightBlue, -50, -50, 100, 100);
+
+        g.FillEllipse(Brushes.Black, -30, -20, 20, 20);
+        g.FillEllipse(Brushes.Black, 10, -20, 20, 20);
+
+        g.DrawArc(new Pen(Color.Black, 2), -20, 10, 40, 20, 0, -180);
+        g.ResetTransform();
     }
 
-    private void DrawArms(SKCanvas canvas, float centerX, float topY)
+    static void DrawBody(Graphics g, Vector3f position)
     {
-        float bodyX = centerX - bodyWidth / 2;
-        float bodyY = topY + headSize;
-
-        float leftArmStartX = bodyX;
-        float leftArmStartY = bodyY + bodyHeight / 4;
-        float leftArmEndX = leftArmStartX - armLength;
-        float leftArmEndY = leftArmStartY;
-
-        float rightArmStartX = bodyX + bodyWidth;
-        float rightArmStartY = leftArmStartY;
-        float rightArmEndX = rightArmStartX + armLength;
-        float rightArmEndY = rightArmStartY;
-
-        var armPaint = new SKPaint { Color = SKColors.Black, StrokeWidth = 4 };
-        canvas.DrawLine(leftArmStartX, leftArmStartY, leftArmEndX, leftArmEndY, armPaint);
-        canvas.DrawLine(rightArmStartX, rightArmStartY, rightArmEndX, rightArmEndY, armPaint);
+        g.FillRectangle(Brushes.LightGreen, (float)position.X - 30, (float)position.Y - 100, 60, 200);
     }
 
-    private void DrawLegs(SKCanvas canvas, float centerX, float topY)
+    static void DrawArm(Graphics g, Vector3f position, Vector3f offset)
     {
-        float bodyY = topY + headSize;
-        float leftLegStartX = centerX - bodyWidth / 4;
-        float leftLegStartY = bodyY + bodyHeight;
-        float leftLegEndX = leftLegStartX - legLength / 4;
-        float leftLegEndY = leftLegStartY + legLength;
-
-        float rightLegStartX = centerX + bodyWidth / 4;
-        float rightLegStartY = leftLegStartY;
-        float rightLegEndX = rightLegStartX + legLength / 4;
-        float rightLegEndY = rightLegStartY + legLength;
-
-        var legPaint = new SKPaint { Color = SKColors.Black, StrokeWidth = 4 };
-        canvas.DrawLine(leftLegStartX, leftLegStartY, leftLegEndX, leftLegEndY, legPaint);
-        canvas.DrawLine(rightLegStartX, rightLegStartY, rightLegEndX, rightLegEndY, legPaint);
+        Vector3f endPoint = position + offset;
+        g.DrawLine(new Pen(Color.Black, 4), (float)position.X, (float)position.Y, (float)endPoint.X, (float)endPoint.Y);
     }
 
-    public static void Main(string[] args)
+    static void DrawLeg(Graphics g, Vector3f position, Vector3f offset)
     {
-        var drawing = new HumanBodyDrawing();
-        drawing.Run();
+        Vector3f endPoint = position + offset;
+        g.DrawLine(new Pen(Color.Black, 4), (float)position.X, (float)position.Y, (float)endPoint.X, (float)endPoint.Y);
     }
 }
